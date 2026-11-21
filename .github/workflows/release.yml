@@ -156,15 +156,25 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: hstyi/markdown-editor
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.GH_TOKEN }}
+          persist-credentials: false
+          path: source
+
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: release-assets
+
       - name: Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ inputs.version }}
           draft: true
+          body_path: source/CHANGELOG.md
           fail_on_unmatched_files: true
           repository: texelmd/texel-releases
           token: ${{ secrets.GH_TOKEN }}
