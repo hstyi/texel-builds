@@ -1,0 +1,172 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version'
+        required: true
+        type: string
+      ref:
+        description: 'Commit hash'
+        required: true
+        type: string
+        default: 'main'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-15
+            cc: /usr/bin/clang
+            cxx: /usr/bin/clang++
+          - os: macos-15-intel
+            cc: /usr/bin/clang
+            cxx: /usr/bin/clang++
+          - os: windows-2022
+            cc: cl.exe
+            cxx: cl.exe
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: hstyi/markdown-editor
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.GH_TOKEN }}
+          persist-credentials: false
+
+      - name: Install the Apple certificate
+        if: runner.os == 'macOS'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+      - name: Setup the Notary information
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          STORE_CREDENTIALS: texel-notary
+        run: |
+          xcrun notarytool store-credentials "$STORE_CREDENTIALS" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APPLE_PASSWORD"
+
+      - name: Set up Sparkle tools
+        if: runner.os == 'macOS'
+        uses: jozefizso/setup-sparkle@v2
+        with:
+          version: '2.9.6'
+
+      - name: Set up WinSparkle tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINSPARKLE_VERSION: 0.9.4
+        run: |
+          $version = $env:WINSPARKLE_VERSION
+          $archive = "WinSparkle-$version.zip"
+          $zip = Join-Path $env:RUNNER_TEMP $archive
+
+          Invoke-WebRequest `
+          -Uri "https://github.com/vslavik/winsparkle/releases/download/v$version/$archive" `
+          -OutFile $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP -Force
+          
+          $bin = Join-Path $env:RUNNER_TEMP "WinSparkle-$version/bin"
+          $bin >> $env:GITHUB_PATH
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: yarn
+          cache-dependency-path: yarn.lock
+
+      - uses: actions/cache@v6
+        with:
+          path: native/vcpkg/vcpkg_installed
+          key: vcpkg-v1-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('native/CMakePresets.json', 'native/vcpkg/vcpkg.json', 'native/vcpkg/triplets/*.cmake') }}
+
+      - name: Setup Vcpkg Baseline
+        uses: lukka/run-vcpkg@v11
+        env:
+          VCPKG_ROOT: /usr/local/share/vcpkg
+        with:
+          vcpkgJsonGlob: '**/native/vcpkg/vcpkg.json'
+          vcpkgJsonIgnores: '[]'
+
+      - name: Prefetch PCRE2 SLJIT metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          downloads="${VCPKG_DOWNLOADS:-$VCPKG_ROOT/downloads}"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            downloads="$(cygpath -u "$downloads")"
+          fi
+          mkdir -p "$downloads"
+          file="$downloads/pcre2-pcre2-10.49-sljit-gitlink.json"
+
+          gh api 'repos/PCRE2Project/pcre2/contents/deps/sljit?ref=pcre2-10.49' \
+            | jq -b -M . > "$file.tmp"
+          mv "$file.tmp" "$file"
+
+      - name: Build
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+          CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+        run: |
+          yarn install --frozen-lockfile
+          yarn build
+
+      - name: Upload release files
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            native/cmake-build-Darwin-release/bin/*.zip
+            native/cmake-build-Darwin-release/bin/*.xml
+            native/cmake-build-Windows-release/dist/*.exe
+            native/cmake-build-Windows-release/dist/*.xml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release-assets
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ inputs.version }}
+          draft: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/**/*.zip
+            release-assets/**/*.xml
+            release-assets/**/*.exe
