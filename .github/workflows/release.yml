@@ -166,6 +166,8 @@ jobs:
           tag_name: v${{ inputs.version }}
           draft: true
           fail_on_unmatched_files: true
+          repository: texelmd/texel-releases
+          token: ${{ secrets.GH_TOKEN }}
           files: |
             release-assets/**/*.zip
             release-assets/**/*.xml
