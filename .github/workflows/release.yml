@@ -33,6 +33,9 @@ jobs:
           - os: windows-2022
             cc: cl.exe
             cxx: cl.exe
+          - os: windows-11-arm
+            cc: cl.exe
+            cxx: cl.exe
     steps:
       - uses: actions/checkout@v7
         with:
