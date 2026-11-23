@@ -33,9 +33,11 @@ jobs:
           - os: windows-2022
             cc: cl.exe
             cxx: cl.exe
+            arch: x64
           - os: windows-11-arm
             cc: cl.exe
             cxx: cl.exe
+            arch: amd64_arm64
     steps:
       - uses: actions/checkout@v7
         with:
@@ -100,6 +102,8 @@ jobs:
       - name: Set up MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+        with: 
+          arch: ${{ matrix.arch }}
 
       - uses: actions/setup-node@v7
         with:
