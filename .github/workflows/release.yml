@@ -110,7 +110,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
-          vsversion: ${{ matrix.arch == 'x86' && '' || '2022' }}
+          vsversion: ${{ matrix.arch == 'x86' && '2022' || '' }}
           toolset: ${{ matrix.arch == 'x86' && '14.44' || '' }}
 
       - uses: actions/setup-node@v7
