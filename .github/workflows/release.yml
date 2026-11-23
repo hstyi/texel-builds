@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    name: build (${{ matrix.os }})
+    name: build (${{ matrix.os }} ${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -27,13 +27,19 @@ jobs:
           - os: macos-15
             cc: /usr/bin/clang
             cxx: /usr/bin/clang++
+            arch: arm64
           - os: macos-15-intel
             cc: /usr/bin/clang
             cxx: /usr/bin/clang++
+            arch: x64
           - os: windows-2022
             cc: cl.exe
             cxx: cl.exe
             arch: x64
+          - os: windows-2022
+            cc: cl.exe
+            cxx: cl.exe
+            arch: x86
           - os: windows-11-arm
             cc: cl.exe
             cxx: cl.exe
@@ -102,8 +108,10 @@ jobs:
       - name: Set up MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
-        with: 
+        with:
           arch: ${{ matrix.arch }}
+          vsversion: ${{ matrix.arch == 'x86' && '' || '2022' }}
+          toolset: ${{ matrix.arch == 'x86' && '14.44' || '' }}
 
       - uses: actions/setup-node@v7
         with:
@@ -114,7 +122,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: native/vcpkg/vcpkg_installed
-          key: vcpkg-v1-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('native/CMakePresets.json', 'native/vcpkg/vcpkg.json', 'native/vcpkg/triplets/*.cmake') }}
+          key: vcpkg-v1-${{ matrix.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ hashFiles('native/CMakePresets.json', 'native/vcpkg/vcpkg.json', 'native/vcpkg/triplets/*.cmake') }}
 
       - name: Setup Vcpkg Baseline
         uses: lukka/run-vcpkg@v11
@@ -152,7 +160,7 @@ jobs:
       - name: Upload release files
         uses: actions/upload-artifact@v7
         with:
-          name: release-${{ matrix.os }}
+          name: release-${{ matrix.os }}-${{ matrix.arch }}
           if-no-files-found: error
           path: |
             native/cmake-build-Darwin-release/bin/*.zip
