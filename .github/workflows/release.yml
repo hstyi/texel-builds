@@ -89,21 +89,9 @@ jobs:
 
       - name: Set up WinSparkle tools
         if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          WINSPARKLE_VERSION: 0.9.4
-        run: |
-          $version = $env:WINSPARKLE_VERSION
-          $archive = "WinSparkle-$version.zip"
-          $zip = Join-Path $env:RUNNER_TEMP $archive
-
-          Invoke-WebRequest `
-          -Uri "https://github.com/vslavik/winsparkle/releases/download/v$version/$archive" `
-          -OutFile $zip
-          Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP -Force
-          
-          $bin = Join-Path $env:RUNNER_TEMP "WinSparkle-$version/bin"
-          $bin >> $env:GITHUB_PATH
+        uses: hstyi/setup-winsparkle@v1
+        with: 
+          version: '0.9.4'
 
       - name: Set up MSVC
         if: runner.os == 'Windows'
@@ -131,22 +119,6 @@ jobs:
         with:
           vcpkgJsonGlob: '**/native/vcpkg/vcpkg.json'
           vcpkgJsonIgnores: '[]'
-
-      - name: Prefetch PCRE2 SLJIT metadata
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          downloads="${VCPKG_DOWNLOADS:-$VCPKG_ROOT/downloads}"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            downloads="$(cygpath -u "$downloads")"
-          fi
-          mkdir -p "$downloads"
-          file="$downloads/pcre2-pcre2-10.49-sljit-gitlink.json"
-
-          gh api 'repos/PCRE2Project/pcre2/contents/deps/sljit?ref=pcre2-10.49' \
-            | jq -b -M . > "$file.tmp"
-          mv "$file.tmp" "$file"
 
       - name: Build
         env:
